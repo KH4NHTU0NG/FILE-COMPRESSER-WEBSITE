@@ -1,75 +1,38 @@
-<<<<<<< HEAD
-# React + TypeScript + Vite
+# [TKT] FILE COMPRESSER
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Ứng dụng Web-App hỗ trợ nén tệp PDF và Hình ảnh hoạt động 100% tại Client-side (Zero-Trust Architecture) [1, 2].
 
-Currently, two official plugins are available:
+## 1. Công nghệ sử dụng (Tech Stack)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+*   **Framework chính:** React.js (TypeScript) + Vite [6]
+*   **Styling (Giao diện):** Tailwind CSS v4 [5]
+*   **Xử lý nhị phân PDF:** `pdf-lib` [2]
+*   **Kết xuất trang PDF:** `pdfjs-dist` [2]
+*   **Nén & Xử lý pixel:** HTML5 Canvas API [3]
+*   **Icons:** `lucide-react`
 
-## React Compiler
+---
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 2. Cách khởi chạy dự án (How to Run)
 
-## Expanding the ESLint configuration
+### Yêu cầu hệ thống
+*   Đã cài đặt **Node.js** (Phiên bản gợi ý >= 18.x) và **npm**.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### Các bước thực hiện
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+1.  **Cài đặt các thư viện phụ thuộc:**
+    ```bash
+    npm install
+    ```
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+2.  **Chạy ứng dụng trong môi trường phát triển (Local Dev):**
+    ```bash
+    npm run dev
+    ```
+    *Mặc định ứng dụng sẽ chạy tại địa chỉ: `http://localhost:5173`*
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
+3.  **Biên dịch dự án cho môi trường sản xuất (Production Build):**
+    ```bash
+    npm run build
+    ```
+    *Sản phẩm tĩnh sẽ được tạo ra tại thư mục `dist/`*
