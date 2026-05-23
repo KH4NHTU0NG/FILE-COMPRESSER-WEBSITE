@@ -29,12 +29,12 @@ export const Settings: React.FC<SettingsProps> = ({
 
       {/* Mức độ nén */}
       <div className="flex flex-col gap-3">
-        <label className="text-sm font-semibold text-white/80">Mức độ nén (Compression Level)</label>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <label className="text-sm font-semibold text-white/80">Mức độ nén mặc định (Default Level)</label>
+        <div className="flex flex-col gap-3">
           {/* Level 1 */}
           <button
             onClick={() => setLevel(1)}
-            className={`flex flex-col text-left p-4 rounded-xl border transition-all duration-200 ${
+            className={`flex flex-col text-left p-4 rounded-xl border transition-all duration-200 cursor-pointer ${
               level === 1
                 ? 'bg-primary-950/10 border-primary-500 shadow-[0_0_15px_rgba(124,101,252,0.15)]'
                 : 'bg-white/5 border-white/5 hover:border-white/20'
@@ -49,7 +49,7 @@ export const Settings: React.FC<SettingsProps> = ({
           {/* Level 2 */}
           <button
             onClick={() => setLevel(2)}
-            className={`flex flex-col text-left p-4 rounded-xl border transition-all duration-200 ${
+            className={`flex flex-col text-left p-4 rounded-xl border transition-all duration-200 cursor-pointer ${
               level === 2
                 ? 'bg-primary-950/10 border-primary-500 shadow-[0_0_15px_rgba(124,101,252,0.15)]'
                 : 'bg-white/5 border-white/5 hover:border-white/20'
@@ -64,7 +64,7 @@ export const Settings: React.FC<SettingsProps> = ({
           {/* Level 3 */}
           <button
             onClick={() => setLevel(3)}
-            className={`flex flex-col text-left p-4 rounded-xl border transition-all duration-200 ${
+            className={`flex flex-col text-left p-4 rounded-xl border transition-all duration-200 cursor-pointer ${
               level === 3
                 ? 'bg-primary-950/10 border-primary-500 shadow-[0_0_15px_rgba(124,101,252,0.15)]'
                 : 'bg-white/5 border-white/5 hover:border-white/20'
