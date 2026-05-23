@@ -1,5 +1,4 @@
-import { PDFDocument, PDFRawStream, PDFName, PDFNumber, PDFRef } from 'pdf-lib';
-import browserImageCompression from 'browser-image-compression';
+import { PDFDocument, PDFRawStream, PDFName, PDFNumber, PDFRef, PDFArray } from 'pdf-lib';
 import * as pdfjs from 'pdfjs-dist';
 
 // Configure the worker for pdfjs-dist from CDN to avoid bundler issues [1, 6]
@@ -73,40 +72,77 @@ function compressJpegBytes(
 }
 
 /**
- * Core function to compress images using browser-image-compression [1].
+ * Helper to check if a PDF filter is or contains DCTDecode (JPEG).
+ */
+function isDCTDecode(filter: any): boolean {
+  if (!filter) return false;
+  if (filter === PDFName.of('DCTDecode')) return true;
+  if (filter instanceof PDFArray) {
+    return filter.asArray().some((f) => f === PDFName.of('DCTDecode'));
+  }
+  return false;
+}
+
+/**
+ * Custom Canvas-based image compression to guarantee distinct sizes for each level [3].
  */
 export async function compressImage(
   file: File,
   level: 1 | 2 | 3,
-  stripMetadata: boolean,
+  _stripMetadata: boolean,
   onProgress?: (progress: number) => void
 ): Promise<Blob> {
-  // Set parameters according to the selected compression level
-  let maxSizeMB = 10;
-  let maxWidthOrHeight = 4096;
-  let initialQuality = 0.9;
+  let scale = 1.0;
+  let quality = 0.85;
 
   if (level === 2) {
-    maxSizeMB = 2;
-    maxWidthOrHeight = 2048;
-    initialQuality = 0.7; // Medium Quality [1]
+    scale = 0.75; // Downscale slightly
+    quality = 0.70; // Balanced quality
   } else if (level === 3) {
-    maxSizeMB = 0.5;
-    maxWidthOrHeight = 1024;
-    initialQuality = 0.4; // Low Quality / Maximum Compression [1]
+    scale = 0.50; // Downscale half
+    quality = 0.40; // Max compression quality
   }
 
-  const options = {
-    maxSizeMB,
-    maxWidthOrHeight,
-    useWebWorker: true,
-    initialQuality,
-    preserveExif: !stripMetadata, // Strip EXIF metadata if selected [3]
-    onProgress: onProgress ? (progress: number) => onProgress(progress) : undefined,
-  };
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Canvas context not available'));
+          return;
+        }
 
-  const compressedFile = await browserImageCompression(file, options);
-  return compressedFile;
+        const newWidth = Math.max(1, Math.round(img.width * scale));
+        const newHeight = Math.max(1, Math.round(img.height * scale));
+        canvas.width = newWidth;
+        canvas.height = newHeight;
+
+        // Draw image (stripping EXIF metadata implicitly) [3]
+        ctx.drawImage(img, 0, 0, newWidth, newHeight);
+
+        // Convert to JPEG for maximum compression
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error('Canvas toBlob failed'));
+              return;
+            }
+            if (onProgress) onProgress(100);
+            resolve(blob);
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.src = event.target?.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 /**
@@ -183,8 +219,8 @@ export async function compressPdfInPlace(
     const subtype = dict.get(PDFName.of('Subtype'));
     const filter = dict.get(PDFName.of('Filter'));
 
-    // We look for JPEG image streams (/Subtype: /Image, /Filter: /DCTDecode) [2]
-    if (subtype === PDFName.of('Image') && filter === PDFName.of('DCTDecode')) {
+    // Check for JPEG image streams using the helper [2]
+    if (subtype === PDFName.of('Image') && isDCTDecode(filter)) {
       try {
         const originalBytes = pdfObject.contents;
 

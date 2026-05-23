@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dropzone } from './components/Dropzone';
 import { Settings } from './components/Settings';
 import { FileItem } from './components/FileItem';
@@ -6,13 +6,107 @@ import type { FileState } from './components/FileItem';
 import { compressImage, compressPdfInPlace, compressPdfByRasterization } from './utils/compressor';
 import { ShieldCheck, Sparkles, Files, Trash2, Zap, Download } from 'lucide-react';
 
-
 export default function App() {
   const [files, setFiles] = useState<FileState[]>([]);
-  const [level, setLevel] = useState<1 | 2 | 3>(2); // Default is Balanced
-  const [stripMetadata, setStripMetadata] = useState(true); // Default is enabled
-  const [rasterizePdf, setRasterizePdf] = useState(false); // Default is disabled
+  const [level, setLevel] = useState<1 | 2 | 3>(2); // Default compression level
+  const [stripMetadata, setStripMetadata] = useState(true); // Default EXIF/PDF metadata setting
+  const [rasterizePdf, setRasterizePdf] = useState(false); // Default PDF rasterization setting
   const [isCompressingAll, setIsCompressingAll] = useState(false);
+
+  // Helper to start sequential background compression for all 3 levels of a file [1, 2]
+  const startBackgroundCompression = async (fileStateId: string, file: File) => {
+    const levels: (1 | 2 | 3)[] = [1, 2, 3];
+
+    for (const lvl of levels) {
+      // Set status to compressing for this level
+      setFiles((prev) =>
+        prev.map((f) => {
+          if (f.id !== fileStateId) return f;
+          return {
+            ...f,
+            compressions: {
+              ...f.compressions,
+              [lvl]: { size: 0, blob: null as any, status: 'compressing' },
+            },
+          };
+        })
+      );
+
+      try {
+        let compressedBlob: Blob;
+        const isPdf = file.type === 'application/pdf';
+
+        if (isPdf) {
+          if (rasterizePdf) {
+            compressedBlob = await compressPdfByRasterization(file, lvl);
+          } else {
+            // Try in-place first [2]
+            compressedBlob = await compressPdfInPlace(file, lvl, stripMetadata);
+            // Self-healing fallback: if in-place compression failed to reduce size significantly
+            if (compressedBlob.size >= file.size * 0.95) {
+              console.log(`In-place compression failed to reduce size for Level ${lvl}. Falling back to rasterization.`);
+              compressedBlob = await compressPdfByRasterization(file, lvl);
+            }
+          }
+        } else {
+          // Compress image via Canvas API [3]
+          compressedBlob = await compressImage(file, lvl, stripMetadata);
+        }
+
+        setFiles((prev) =>
+          prev.map((f) => {
+            if (f.id !== fileStateId) return f;
+            return {
+              ...f,
+              compressions: {
+                ...f.compressions,
+                [lvl]: {
+                  size: compressedBlob.size,
+                  blob: compressedBlob,
+                  status: 'completed',
+                },
+              },
+            };
+          })
+        );
+      } catch (err: any) {
+        console.error(`Error compressing Level ${lvl} for file ${file.name}:`, err);
+        setFiles((prev) =>
+          prev.map((f) => {
+            if (f.id !== fileStateId) return f;
+            return {
+              ...f,
+              compressions: {
+                ...f.compressions,
+                [lvl]: {
+                  size: 0,
+                  blob: null as any,
+                  status: 'failed',
+                  error: err.message || 'Lỗi nén tệp',
+                },
+              },
+            };
+          })
+        );
+      }
+    }
+  };
+
+  // Re-run background compressions when default configuration changes
+  useEffect(() => {
+    if (files.length === 0) return;
+    
+    // Process all files
+    const recompress = async () => {
+      setIsCompressingAll(true);
+      for (const item of files) {
+        await startBackgroundCompression(item.id, item.file);
+      }
+      setIsCompressingAll(false);
+    };
+    
+    recompress();
+  }, [stripMetadata, rasterizePdf]);
 
   // Handle selected files
   const handleFilesSelected = (selectedFiles: File[]) => {
@@ -21,12 +115,21 @@ export default function App() {
       file,
       name: file.name,
       originalSize: file.size,
-      compressedSize: null,
-      compressedBlob: null,
+      compressions: {
+        1: null,
+        2: null,
+        3: null,
+      },
+      selectedLevel: level, // Use current default level
       status: 'pending',
-      progress: 0,
     }));
+
     setFiles((prev) => [...prev, ...newFiles]);
+
+    // Start background calculations for new files sequentially
+    newFiles.forEach((item) => {
+      startBackgroundCompression(item.id, item.file);
+    });
   };
 
   // Remove file from list
@@ -41,104 +144,43 @@ export default function App() {
     );
   };
 
-  // Update progress helper
-  const updateProgress = (id: string, progress: number) => {
+  // Select level per-file
+  const handleSelectLevel = (id: string, lvl: 1 | 2 | 3) => {
     setFiles((prev) =>
-      prev.map((f) => (f.id === id ? { ...f, progress } : f))
+      prev.map((f) => (f.id === id ? { ...f, selectedLevel: lvl } : f))
     );
   };
 
-  // Compress a single file
-  const handleCompressFile = async (id: string) => {
-    const item = files.find((f) => f.id === id);
-    if (!item) return;
-
-    setFiles((prev) =>
-      prev.map((f) => (f.id === id ? { ...f, status: 'compressing', progress: 0 } : f))
-    );
-
-    try {
-      let compressedBlob: Blob;
-      const isPdf = item.file.type === 'application/pdf';
-
-      if (isPdf) {
-        if (rasterizePdf) {
-          compressedBlob = await compressPdfByRasterization(
-            item.file,
-            level,
-            (progress) => updateProgress(id, progress)
-          );
-        } else {
-          compressedBlob = await compressPdfInPlace(
-            item.file,
-            level,
-            stripMetadata,
-            (progress) => updateProgress(id, progress)
-          );
-        }
-      } else {
-        compressedBlob = await compressImage(
-          item.file,
-          level,
-          stripMetadata,
-          (progress) => updateProgress(id, progress)
-        );
-      }
-
-      setFiles((prev) =>
-        prev.map((f) =>
-          f.id === id
-            ? {
-                ...f,
-                status: 'completed',
-                compressedSize: compressedBlob.size,
-                compressedBlob: compressedBlob,
-                progress: 100,
-              }
-            : f
-        )
-      );
-    } catch (error: any) {
-      console.error('Compression error:', error);
-      setFiles((prev) =>
-        prev.map((f) =>
-          f.id === id
-            ? {
-                ...f,
-                status: 'failed',
-                error: error.message || 'Lỗi xử lý file.',
-              }
-            : f
-        )
-      );
-    }
-  };
-
-  // Compress all files sequentially to avoid overloading browser memory
+  // Compress all files (re-trigger processing of pending/failed levels)
   const handleCompressAll = async () => {
-    const pendingFiles = files.filter((f) => f.status === 'pending' || f.status === 'failed');
+    const pendingFiles = files.filter((f) => {
+      const activeRes = f.compressions[f.selectedLevel];
+      return !activeRes || activeRes.status === 'failed' || activeRes.status === 'pending';
+    });
+    
     if (pendingFiles.length === 0) return;
 
     setIsCompressingAll(true);
-    for (const fileItem of pendingFiles) {
-      await handleCompressFile(fileItem.id);
+    for (const item of pendingFiles) {
+      await startBackgroundCompression(item.id, item.file);
     }
     setIsCompressingAll(false);
   };
 
-  // Download all compressed files
+  // Download all selected levels of compressed files
   const handleDownloadAll = () => {
-    const completedFiles = files.filter((f) => f.status === 'completed' && f.compressedBlob);
-    completedFiles.forEach((item) => {
-      if (!item.compressedBlob) return;
-      const url = URL.createObjectURL(item.compressedBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = item.name;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+    files.forEach((item) => {
+      const res = item.compressions[item.selectedLevel];
+      if (res?.status === 'completed' && res.blob) {
+        const url = URL.createObjectURL(res.blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = item.name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
     });
   };
 
@@ -147,8 +189,11 @@ export default function App() {
     setFiles([]);
   };
 
-  const hasPending = files.some((f) => f.status === 'pending' || f.status === 'failed');
-  const hasCompleted = files.some((f) => f.status === 'completed');
+  const hasPending = files.some((f) => {
+    const activeRes = f.compressions[f.selectedLevel];
+    return !activeRes || activeRes.status === 'pending' || activeRes.status === 'failed';
+  });
+  const hasCompleted = files.some((f) => f.compressions[f.selectedLevel]?.status === 'completed');
 
   return (
     <div className="min-h-screen bg-background text-white selection:bg-primary-500 selection:text-white pb-20 relative overflow-hidden font-sans">
@@ -213,7 +258,7 @@ export default function App() {
                     disabled={isCompressingAll}
                     className="h-8 px-3.5 bg-primary-600 hover:bg-primary-500 active:bg-primary-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-all disabled:opacity-40"
                   >
-                    <Zap className="w-3.5 h-3.5" /> Nén tất cả
+                    <Zap className="w-3.5 h-3.5" /> Nén lại các lỗi
                   </button>
                 )}
                 {hasCompleted && (
@@ -221,7 +266,7 @@ export default function App() {
                     onClick={handleDownloadAll}
                     className="h-8 px-3.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-all"
                   >
-                    <Download className="w-3.5 h-3.5" /> Tải tất cả
+                    <Download className="w-3.5 h-3.5" /> Tải tất cả bản chọn
                   </button>
                 )}
                 <button
@@ -241,7 +286,7 @@ export default function App() {
                   item={file}
                   onRemove={handleRemoveFile}
                   onRename={handleRenameFile}
-                  onCompress={handleCompressFile}
+                  onSelectLevel={handleSelectLevel}
                 />
               ))}
             </div>
